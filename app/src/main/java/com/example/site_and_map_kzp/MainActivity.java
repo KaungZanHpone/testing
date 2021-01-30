@@ -94,11 +94,12 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     public static final String API_KEY="CgB6e3x9uzxzgAb7Ea6ZzJ84toFhQvQdPYYEi/zvxVZV5LR7rEXMmd+NaglYQEcWCCnFHIK3B+B9x4+nBGHs0Mw/";
     // Location interaction object.
     private FusedLocationProviderClient fusedLocationProviderClient;
+    private Polyline polyline;
     // Location request object.
     private LocationRequest mLocationRequest;
     private boolean locationButtonClicked=false;
     private static double mLat,mLng;
-    private FloatingActionButton locateMe;
+    private FloatingActionButton locateMe,deleteRoute;
 
     public static final String ROOT_URL = "https://mapapi.cloud.huawei.com/mapApi/v1/routeService/";
 
@@ -139,9 +140,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         setContentView(R.layout.activity_main);
         mMapView = findViewById(R.id.mapview_mapviewdemo);
         locateMe=findViewById(R.id.locateMe);
+        deleteRoute=findViewById(R.id.deleteRoute);
         //searchService = SearchServiceFactory.create(MainActivity.this, "CgB6e3x9uzxzgAb7Ea6ZzJ84toFhQvQdPYYEi/zvxVZV5LR7rEXMmd+NaglYQEcWCCnFHIK3B+B9x4+nBGHs0Mw/");
         mLocationRequest = new LocationRequest();
-        //mLocationRequest.setInterval(5000);
+        mLocationRequest.setInterval(10000);
         mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
         fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this);
         Bundle mapViewBundle = null;
@@ -158,6 +160,35 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 locationButtonClicked=true;
                 getLocation();
                 Log.i("ResultsOf:",mLat+" "+mLng);
+            }
+        });
+        deleteRoute.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                LatLngData.setLat(0);
+                LatLngData.setLng(0);
+                LatLngData.setDeslat(0);
+                LatLngData.setDeslng(0);
+                mMarker.remove();
+                mPolylines.clear();
+                mPaths.clear();
+                polyline.remove();
+                mMarkerDestination.remove();
+                fusedLocationProviderClient.removeLocationUpdates(mLocationCallback)
+                        // Define callback for success in stopping requesting location updates.
+                        .addOnSuccessListener(new OnSuccessListener<Void>() {
+                            @Override
+                            public void onSuccess(Void aVoid) {
+                                //...
+                            }
+                        })
+                        // Define callback for failure in stopping requesting location updates.
+                        .addOnFailureListener(new OnFailureListener() {
+                            @Override
+                            public void onFailure(Exception e) {
+                                // ...
+                            }
+                        });
             }
         });
 
@@ -215,15 +246,64 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     if(mMarker!=null){
                         mMarker.remove();
                     }
+                    if(mPaths.size()>0){
+                        polyline.remove();
+                        mPaths.clear();
+                        mPolylines.clear();
+                        mMarkerDestination.remove();
+                    }
                     MarkerOptions options = new MarkerOptions()
                             .position(new LatLng(mLat,mLng))
                             .title("Your ")
                             .snippet("current location");
                     mMarker = hMap.addMarker(options);
                     if(locationButtonClicked) {
-
                         hMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(mLat, mLng), 15));
                         locationButtonClicked=false;
+                    }
+                    if(LatLngData.getDeslat()!=0 && LatLngData.getDeslng()!=0 ){
+                        String serviceName = "driving";
+                        try {
+                            JSONObject json = new JSONObject();
+                            JSONObject origin = new JSONObject();
+                            JSONObject destination = new JSONObject();
+
+
+                            try {
+                                origin.put("lng", LatLngData.getLng());
+                                origin.put("lat", LatLngData.getLat());
+                                destination.put("lng", LatLngData.getDeslng());
+                                destination.put("lat", LatLngData.getDeslat());
+                                json.put("origin", origin);
+                                json.put("destination", destination);
+                            } catch (JSONException e) {
+                                Log.e("error", e.getMessage());
+                            }
+                            RequestBody body = RequestBody.create(JSON, String.valueOf(json));
+
+                            OkHttpClient client = new OkHttpClient();
+                            Request request =
+                                    new Request.Builder().url(ROOT_URL + serviceName + conection + URLEncoder.encode(API_KEY, "UTF-8"))
+                                            .post(body)
+                                            .build();
+
+                            client.newCall(request).enqueue(new Callback() {
+                                @Override
+                                public void onFailure(Call call, IOException e) {
+                                    Log.e("driving", e.toString());
+                                }
+
+                                @Override
+                                public void onResponse(Call call, Response response) throws IOException {
+
+                                    a_response=response.body().string();
+                                    generateRoute(a_response);
+
+                                }
+                            });
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
                     }
 
 
@@ -314,8 +394,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             public void onPoiClick(PointOfInterest pointOfInterest) {
                 Toast.makeText(getApplicationContext(),"You have clicked: "+pointOfInterest.name
                         +"\n  PlaceID: "+pointOfInterest.placeId,Toast.LENGTH_LONG).show();
-                LatLngData.setDeslat(pointOfInterest.latLng.latitude);
-                LatLngData.setDeslng(pointOfInterest.latLng.longitude);
+
 
 
 
@@ -357,6 +436,15 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                             @Override
                             public void onClick(DialogInterface dialog, int which) {
                                 //Routing mLat,mLng
+                                LatLngData.setDeslat(pointOfInterest.latLng.latitude);
+                                LatLngData.setDeslng(pointOfInterest.latLng.longitude);
+                                if(mMarkerDestination!=null) {
+                                    mMarkerDestination.remove();
+                                    mPaths.clear();
+                                    mPolylines.clear();
+                                    polyline.remove();
+                                }
+
                                 String serviceName = "driving";
                                 try {
                                     JSONObject json = new JSONObject();
@@ -480,6 +568,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             return;
         }
 
+
         for (int i = 0; i < paths.size(); i++) {
             List<LatLng> path = paths.get(i);
             PolylineOptions options = new PolylineOptions().color(Color.BLUE).width(5);
@@ -487,8 +576,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 options.add(latLng);
             }
 
-            Polyline polyline = hMap.addPolyline(options);
+            polyline = hMap.addPolyline(options);
             mPolylines.add(i, polyline);
+
         }
 
         addOriginMarker(paths.get(0).get(0));
