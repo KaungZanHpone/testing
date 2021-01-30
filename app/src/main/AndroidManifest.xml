@@ -20,7 +20,9 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Site_and_Map_KZP">
-
+        <meta-data
+            android:name="com.huawei.hms.client.appid"
+            android:value="appid=103774257" />
         <activity android:name=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -28,7 +30,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".ViewWebsite"></activity>
+        <activity android:name=".WebList"></activity>
     </application>
 <!-- android:allowBackup="true"-->
 </manifest>

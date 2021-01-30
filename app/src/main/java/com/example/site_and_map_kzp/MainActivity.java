@@ -1,5 +1,6 @@
 package com.example.site_and_map_kzp;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -9,19 +10,21 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.content.pm.PackageManager;
-import android.net.Uri;
+import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.Looper;
+import android.os.Message;
 import android.util.Log;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
-import android.widget.ArrayAdapter;
-import android.widget.Button;
 import android.widget.LinearLayout;
-import android.widget.ListAdapter;
-import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.huawei.hmf.tasks.OnFailureListener;
 import com.huawei.hmf.tasks.OnSuccessListener;
 import com.huawei.hms.common.ApiException;
@@ -35,32 +38,45 @@ import com.huawei.hms.location.LocationSettingsRequest;
 import com.huawei.hms.location.LocationSettingsResponse;
 import com.huawei.hms.location.LocationSettingsStatusCodes;
 import com.huawei.hms.location.SettingsClient;
+import com.huawei.hms.maps.CameraUpdate;
 import com.huawei.hms.maps.CameraUpdateFactory;
 import com.huawei.hms.maps.HuaweiMap;
 import com.huawei.hms.maps.MapView;
-import com.huawei.hms.maps.MapsInitializer;
 import com.huawei.hms.maps.OnMapReadyCallback;
-import com.huawei.hms.maps.model.BitmapDescriptorFactory;
+import com.huawei.hms.maps.UiSettings;
+import com.huawei.hms.maps.common.util.DistanceCalculator;
 import com.huawei.hms.maps.model.LatLng;
+import com.huawei.hms.maps.model.LatLngBounds;
 import com.huawei.hms.maps.model.Marker;
 import com.huawei.hms.maps.model.MarkerOptions;
 import com.huawei.hms.maps.model.PointOfInterest;
+import com.huawei.hms.maps.model.Polyline;
+import com.huawei.hms.maps.model.PolylineOptions;
 import com.huawei.hms.site.api.SearchResultListener;
 import com.huawei.hms.site.api.SearchService;
 import com.huawei.hms.site.api.SearchServiceFactory;
-import com.huawei.hms.site.api.model.Coordinate;
 import com.huawei.hms.site.api.model.DetailSearchRequest;
 import com.huawei.hms.site.api.model.DetailSearchResponse;
-import com.huawei.hms.site.api.model.HwLocationType;
-import com.huawei.hms.site.api.model.NearbySearchRequest;
-import com.huawei.hms.site.api.model.NearbySearchResponse;
 import com.huawei.hms.site.api.model.SearchStatus;
 import com.huawei.hms.site.api.model.Site;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.List;
+
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 
 public class MainActivity extends AppCompatActivity implements OnMapReadyCallback {
     private static final String TAG = "MapViewDemoActivity";
@@ -74,45 +90,84 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private HuaweiMap hMap;
     private MapView mMapView;
     private Marker mMarker;
-    Button button,locateMe;
     private SearchService searchService;
+    public static final String API_KEY="CgB6e3x9uzxzgAb7Ea6ZzJ84toFhQvQdPYYEi/zvxVZV5LR7rEXMmd+NaglYQEcWCCnFHIK3B+B9x4+nBGHs0Mw/";
     // Location interaction object.
     private FusedLocationProviderClient fusedLocationProviderClient;
     // Location request object.
     private LocationRequest mLocationRequest;
+    private boolean locationButtonClicked=false;
     private static double mLat,mLng;
+    private FloatingActionButton locateMe;
+
+    public static final String ROOT_URL = "https://mapapi.cloud.huawei.com/mapApi/v1/routeService/";
+
+    public static final String conection = "?key=";
+
+    public static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
+
+    static String a_response = "";
+    private LatLngBounds mLatLngBounds;
+    private Marker mMarkerDestination;
+    private List<Polyline> mPolylines = new ArrayList<>();
+    private List<List<LatLng>> mPaths = new ArrayList<>();
+
+    private Handler mHandler = new Handler() {
+        @Override
+        public void handleMessage(Message msg) {
+            switch (msg.what) {
+                case 0:
+                    renderRoute(mPaths, mLatLngBounds);
+                    break;
+                case 1:
+                    Bundle bundle = msg.getData();
+                    String errorMsg = bundle.getString("errorMsg");
+                    Toast.makeText(MainActivity.this, errorMsg, Toast.LENGTH_SHORT).show();
+                    break;
+                default:
+                    break;
+            }
+        }
+    };
+
+
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Log.d(TAG, "onCreate:");
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        button=findViewById(R.id.goToWebView);
-        locateMe=findViewById(R.id.locate);
         mMapView = findViewById(R.id.mapview_mapviewdemo);
+        locateMe=findViewById(R.id.locateMe);
+        //searchService = SearchServiceFactory.create(MainActivity.this, "CgB6e3x9uzxzgAb7Ea6ZzJ84toFhQvQdPYYEi/zvxVZV5LR7rEXMmd+NaglYQEcWCCnFHIK3B+B9x4+nBGHs0Mw/");
         mLocationRequest = new LocationRequest();
+        //mLocationRequest.setInterval(5000);
         mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
         fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this);
         Bundle mapViewBundle = null;
         settingsClient = LocationServices.getSettingsClient(this);
         try {
             searchService = SearchServiceFactory.create(MainActivity.this, URLEncoder.encode("CgB6e3x9uzxzgAb7Ea6ZzJ84toFhQvQdPYYEi/zvxVZV5LR7rEXMmd+NaglYQEcWCCnFHIK3B+B9x4+nBGHs0Mw/", "utf-8"));
+            Toast.makeText(this, "SearchService successful", Toast.LENGTH_SHORT).show();
         } catch (UnsupportedEncodingException e) {
-            Log.e(TAG, "encode apikey error");
+            Toast.makeText(this, "Error while making searchService", Toast.LENGTH_SHORT).show();
         }
-
-        button.setOnClickListener(new View.OnClickListener() {
+        locateMe.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                startActivity(new Intent(getApplicationContext(),ViewWebsite.class).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));
+                locationButtonClicked=true;
+                getLocation();
+                Log.i("ResultsOf:",mLat+" "+mLng);
             }
         });
-        locateMe.setOnClickListener(new View.OnClickListener() {
+
+        /*locateMe.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 checkLocationSettings();
                 getLocation();
             }
-        });
+        });*/
 
 
         if (!hasPermissions(this, RUNTIME_PERMISSIONS)) {
@@ -122,9 +177,13 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         if (savedInstanceState != null) {
             mapViewBundle = savedInstanceState.getBundle(MAPVIEW_BUNDLE_KEY);
         }
+
         mMapView.onCreate(mapViewBundle);
         mMapView.getMapAsync(this);
+        checkLocationSettings();
+        getLocation();
     }
+
 
     private static boolean hasPermissions(Context context, String... permissions) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && permissions != null) {
@@ -143,131 +202,43 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void getLocation(){
-
+        //Toast.makeText(this, "Refreshing location...", Toast.LENGTH_SHORT).show();
         mLocationCallback = new LocationCallback() {
             @Override
             public void onLocationResult(LocationResult locationResult) {
                 if (locationResult != null) {
-                    // Process the location callback result.
                     setCoordinates(locationResult.getLastLocation().getLatitude(),locationResult.getLastLocation().getLongitude());
-                    Toast.makeText(getApplicationContext(),"Current Latitude : "+mLat+"\n Current Longitude"+mLng,Toast.LENGTH_LONG).show();
-                    hMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(mLat,mLng ), 15));
-
+                    LatLngData.setLat(locationResult.getLastLocation().getLatitude());
+                    LatLngData.setLng(locationResult.getLastLocation().getLongitude());
+                    Toast.makeText(MainActivity.this, "New Current Location: "+LatLngData.getLat()+" , "+LatLngData.getLng(), Toast.LENGTH_SHORT).show();
+                    Log.i("NewCurrentLoc: ",mLat+" , "+mLng);
+                    if(mMarker!=null){
+                        mMarker.remove();
+                    }
                     MarkerOptions options = new MarkerOptions()
                             .position(new LatLng(mLat,mLng))
                             .title("Your ")
                             .snippet("current location");
                     mMarker = hMap.addMarker(options);
+                    if(locationButtonClicked) {
+
+                        hMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(mLat, mLng), 15));
+                        locationButtonClicked=false;
+                    }
 
 
-                    hMap.setOnPoiClickListener(new HuaweiMap.OnPoiClickListener() {
-                        @Override
-                        public void onPoiClick(PointOfInterest pointOfInterest) {
-                           Toast.makeText(getApplicationContext(),"You have clicked: "+pointOfInterest.name
-                                    +"\n  PlaceID: "+pointOfInterest.placeId,Toast.LENGTH_LONG).show();
-                            /*String uriString = "mapapp://route?saddr="+mLat+","+mLng+"&daddr="+pointOfInterest.latLng.latitude+
-                                    ","+pointOfInterest.latLng.longitude+"&type=drive";
-                            Uri content_url = Uri.parse(uriString);
-                            Intent intent = new Intent(Intent.ACTION_VIEW, content_url);
-                            if (intent.resolveActivity(getPackageManager()) != null) {
-                                startActivity(intent);
-                            }*/
-                            // Declare a SearchService object.
-                            //SearchService searchService;
-                            /* */
-                            String uriString = "mapapp://route?saddr="+mLat+","+mLng+"&daddr="+pointOfInterest.latLng.latitude+","+pointOfInterest.latLng.longitude+"&type=drive";
-                            Uri content_url = Uri.parse(uriString);
-                            Intent intent = new Intent(Intent.ACTION_VIEW, content_url);
-                            if (intent.resolveActivity(getPackageManager()) != null) {
-                                startActivity(intent);
-                            }
-                            //searchService = SearchServiceFactory.create(MainActivity.this, "CgB6e3x9uzxzgAb7Ea6ZzJ84toFhQvQdPYYEi/zvxVZV5LR7rEXMmd+NaglYQEcWCCnFHIK3B+B9x4+nBGHs0Mw/");
-//                            NearbySearchRequest request = new NearbySearchRequest();
-//                            Coordinate location = new Coordinate(mLat, mLng);
-//                            request.setLocation(location);
-//                            request.setQuery("");
-//                            //request.setRadius(10000);
-//                            request.setHwPoiType(HwLocationType.HEALTH_CARE);
-//                            //request.setLanguage("fr");
-//                            //request.setPageIndex(1);
-////                            request.setPageSize(5);
-//                            //request.setStrictBounds(false);
-//// Create a search result listener.
-//                            SearchResultListener<NearbySearchResponse> resultListener = new SearchResultListener<NearbySearchResponse>() {
-//                                // Return search results upon a successful search.
-//                                @Override
-//                                public void onSearchResult(NearbySearchResponse results) {
-//                                    if (results == null || results.getTotalCount() <= 0) {
-//                                        Toast.makeText(getApplicationContext(),"No data found",Toast.LENGTH_LONG).show();
-//                                        return;
-//                                    }
-//                                    List<Site> sites = results.getSites();
-//                                    if(sites == null || sites.size() == 0){
-//                                        Toast.makeText(getApplicationContext(),"Sites list null",Toast.LENGTH_LONG).show();
-//                                        return;
-//                                    }
-//
-//
-//                                    AlertDialog.Builder builder=new AlertDialog.Builder(MainActivity.this);
-//                                    LinearLayout linearLayout=new LinearLayout(MainActivity.this);
-//                                    linearLayout.setOrientation(LinearLayout.VERTICAL);
-//                                    for(Site site:sites){
-//                                        if(site.getSiteId().equals(pointOfInterest.placeId)) {
-//                                            TextView name = new TextView(MainActivity.this);
-//                                            name.setText(site.getName());
-//                                            linearLayout.addView(name);
-//                                            TextView phone = new TextView(MainActivity.this);
-//                                            phone.setText("Phone: "+site.getPoi().getPhone());
-//                                            linearLayout.addView(phone);
-//                                            TextView address = new TextView(MainActivity.this);
-//                                            address.setText("Address: "+site.getFormatAddress());
-//                                            linearLayout.addView(address);
-//                                        }
-//                                    }
-//                                    builder.setView(linearLayout);
-//                                    builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
-//                                        @Override
-//                                        public void onClick(DialogInterface dialog, int which) {
-//                                            dialog.cancel();
-//                                        }
-//                                    });
-//                                    builder.show();
-//
-//
-//
-//
-//
-//                                }
-//                                // Return the result code and description upon a search exception.
-//                                @Override
-//                                public void onSearchError(SearchStatus status) {
-//                                    Toast.makeText(getApplicationContext(),"Search error occurred",Toast.LENGTH_LONG).show();
-//                                }
-//                            };
-//
-//                            searchService.nearbySearch(request, resultListener);
-//
-//
-//
-
-                        }
-                    });
-                    hMap.setOnMarkerClickListener(new HuaweiMap.OnMarkerClickListener() {
-                        @Override
-                        public boolean onMarkerClick(Marker marker) {
-                           // Toast.makeText(getApplicationContext(),marker.getTitle(),Toast.LENGTH_LONG).show();
-                            return false;
-                        }
-                    });
                 }
             }
         };
+
         fusedLocationProviderClient
                 .requestLocationUpdates(mLocationRequest, mLocationCallback, Looper.getMainLooper())
                 .addOnSuccessListener(new OnSuccessListener<Void>() {
                     @Override
                     public void onSuccess(Void aVoid) {
                         // Processing when the API call is successful.
+                        //Toast.makeText(MainActivity.this, "Location request made successfully", Toast.LENGTH_SHORT).show();
+
                     }
                 })
                 .addOnFailureListener(new OnFailureListener() {
@@ -276,10 +247,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         // Processing when the API call fails.
                     }
                 });
+        // Note: When requesting location updates is stopped, the mLocationCallback object must be the same as LocationCallback in the requestLocationUpdates method.
+
+        // Obtain the last known location.
+
     }
     private void checkLocationSettings(){
         LocationSettingsRequest.Builder builder = new LocationSettingsRequest.Builder();
-        mLocationRequest = new LocationRequest();
+        //mLocationRequest = new LocationRequest();
         builder.addLocationRequest(mLocationRequest);
         LocationSettingsRequest locationSettingsRequest = builder.build();
 // Check the device location settings.
@@ -326,8 +301,227 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         Log.d(TAG, "onMapReady: ");
         hMap = huaweiMap;
         hMap.setMyLocationEnabled(true);
-        hMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(35.6804 ,139.7690 ), 15)); // 16.8567154 , 96.1840702
+        UiSettings uiSettings=hMap.getUiSettings();
+        uiSettings.setMyLocationButtonEnabled(true);
+        uiSettings.setMapToolbarEnabled(true);
+        hMap.setTrafficEnabled(true);
+        hMap.setBuildingsEnabled(true);
+        hMap.setIndoorEnabled(true);
+        hMap.setWatermarkEnabled(true);
+        hMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(16.8567154 ,96.1840702 ), 15)); //  ,
+        hMap.setOnPoiClickListener(new HuaweiMap.OnPoiClickListener() {
+            @Override
+            public void onPoiClick(PointOfInterest pointOfInterest) {
+                Toast.makeText(getApplicationContext(),"You have clicked: "+pointOfInterest.name
+                        +"\n  PlaceID: "+pointOfInterest.placeId,Toast.LENGTH_LONG).show();
+                LatLngData.setDeslat(pointOfInterest.latLng.latitude);
+                LatLngData.setDeslng(pointOfInterest.latLng.longitude);
+
+
+
+                DetailSearchRequest request = new DetailSearchRequest();
+                request.setSiteId(pointOfInterest.placeId);
+                request.setLanguage("en");
+                request.setChildren(false);
+                SearchResultListener<DetailSearchResponse> resultListener = new SearchResultListener<DetailSearchResponse>() {
+                    // Return search results upon a successful search.
+                    @Override
+                    public void onSearchResult(DetailSearchResponse result) {
+                        Site site=result.getSite();
+                        if (result == null || (site = result.getSite()) == null) {
+                            Toast.makeText(MainActivity.this, "Result null", Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+                        //Toast.makeText(MainActivity.this, "Data found!!!", Toast.LENGTH_SHORT).show();
+                        AlertDialog.Builder builder=new AlertDialog.Builder(MainActivity.this);
+                        LinearLayout linearLayout=new LinearLayout(MainActivity.this);
+                        linearLayout.setOrientation(LinearLayout.VERTICAL);
+                        TextView name=new TextView(MainActivity.this);
+                        TextView address=new TextView(MainActivity.this);
+                        TextView distance=new TextView(MainActivity.this);
+                        distance.setText("Distance from current location: "+DistanceCalculator.computeDistanceBetween(new LatLng(mLat,mLng),pointOfInterest.latLng)+" meters");
+                        name.setText(site.getName());
+
+                        address.setText(site.getFormatAddress());
+                        linearLayout.addView(name);
+                        linearLayout.addView(address);
+                        linearLayout.addView(distance);
+                        if(site.getPoi().getInternationalPhone()!=null){
+                            TextView phone=new TextView(MainActivity.this);
+                            phone.setText(site.getPoi().getInternationalPhone());
+                            linearLayout.addView(phone);
+                        }
+
+                        builder.setView(linearLayout);
+                        builder.setPositiveButton("Go", new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                //Routing mLat,mLng
+                                String serviceName = "driving";
+                                try {
+                                    JSONObject json = new JSONObject();
+                                    JSONObject origin = new JSONObject();
+                                    JSONObject destination = new JSONObject();
+
+
+                                    try {
+                                        origin.put("lng", LatLngData.getLng());
+                                        origin.put("lat", LatLngData.getLat());
+                                        destination.put("lng", LatLngData.getDeslng());
+                                        destination.put("lat", LatLngData.getDeslat());
+                                        json.put("origin", origin);
+                                        json.put("destination", destination);
+                                    } catch (JSONException e) {
+                                        Log.e("error", e.getMessage());
+                                    }
+                                    RequestBody body = RequestBody.create(JSON, String.valueOf(json));
+
+                                    OkHttpClient client = new OkHttpClient();
+                                    Request request =
+                                            new Request.Builder().url(ROOT_URL + serviceName + conection + URLEncoder.encode(API_KEY, "UTF-8"))
+                                                    .post(body)
+                                                    .build();
+
+                                    client.newCall(request).enqueue(new Callback() {
+                                        @Override
+                                        public void onFailure(Call call, IOException e) {
+                                            Log.e("driving", e.toString());
+                                        }
+
+                                        @Override
+                                        public void onResponse(Call call, Response response) throws IOException {
+
+                                            a_response=response.body().string();
+                                            generateRoute(a_response);
+
+                                        }
+                                    });
+                                } catch (Exception e) {
+                                    e.printStackTrace();
+                                }
+                            }
+                        });
+                        builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                dialog.cancel();
+                            }
+                        });
+                        builder.show();
+                    }
+                    // Return the result code and description upon a search exception.
+                    @Override
+                    public void onSearchError(SearchStatus status) {
+                        // Toast.makeText(MainActivity.this, "Search error occurred", Toast.LENGTH_SHORT).show();
+                    }
+                };
+                searchService.detailSearch(request, resultListener);
+
+
+
+
+
+            }
+        });
     }
+
+    private void generateRoute(String json) {
+        try {
+            JSONObject jsonObject = new JSONObject(json);
+            JSONArray routes = jsonObject.optJSONArray("routes");
+            if (null == routes || routes.length() == 0) {
+                return;
+            }
+            JSONObject route = routes.getJSONObject(0);
+
+            // get route bounds
+            JSONObject bounds = route.optJSONObject("bounds");
+            if (null != bounds && bounds.has("southwest") && bounds.has("northeast")) {
+                JSONObject southwest = bounds.optJSONObject("southwest");
+                JSONObject northeast = bounds.optJSONObject("northeast");
+                LatLng sw = new LatLng(southwest.optDouble("lat"), southwest.optDouble("lng"));
+                LatLng ne = new LatLng(northeast.optDouble("lat"), northeast.optDouble("lng"));
+                mLatLngBounds = new LatLngBounds(sw, ne);
+            }
+
+            // get paths
+            JSONArray paths = route.optJSONArray("paths");
+            for (int i = 0; i < paths.length(); i++) {
+                JSONObject path = paths.optJSONObject(i);
+                List<LatLng> mPath = new ArrayList<>();
+
+                JSONArray steps = path.optJSONArray("steps");
+                for (int j = 0; j < steps.length(); j++) {
+                    JSONObject step = steps.optJSONObject(j);
+
+                    JSONArray polyline = step.optJSONArray("polyline");
+                    for (int k = 0; k < polyline.length(); k++) {
+                        if (j > 0 && k == 0) {
+                            continue;
+                        }
+                        JSONObject line = polyline.getJSONObject(k);
+                        double lat = line.optDouble("lat");
+                        double lng = line.optDouble("lng");
+                        LatLng latLng = new LatLng(lat, lng);
+                        mPath.add(latLng);
+                    }
+                }
+                mPaths.add(i, mPath);
+            }
+            mHandler.sendEmptyMessage(0);
+
+        } catch (JSONException e) {
+            Log.e(TAG, "JSONException" + e.toString());
+        }
+    }
+
+    private void renderRoute(List<List<LatLng>> paths, LatLngBounds latLngBounds) {
+        if (null == paths || paths.size() <= 0 || paths.get(0).size() <= 0) {
+            return;
+        }
+
+        for (int i = 0; i < paths.size(); i++) {
+            List<LatLng> path = paths.get(i);
+            PolylineOptions options = new PolylineOptions().color(Color.BLUE).width(5);
+            for (LatLng latLng : path) {
+                options.add(latLng);
+            }
+
+            Polyline polyline = hMap.addPolyline(options);
+            mPolylines.add(i, polyline);
+        }
+
+        addOriginMarker(paths.get(0).get(0));
+        addDestinationMarker(paths.get(0).get(paths.get(0).size() - 1));
+
+        if (null != latLngBounds) {
+            CameraUpdate cameraUpdate = CameraUpdateFactory.newLatLngBounds(latLngBounds, 5);
+            hMap.moveCamera(cameraUpdate);
+        } else {
+            hMap.moveCamera(CameraUpdateFactory.newLatLngZoom(paths.get(0).get(0), 13));
+        }
+
+    }
+    private void addOriginMarker(LatLng latLng) {
+        if (null != mMarker) {
+            mMarker.remove();
+        }
+        mMarker = hMap.addMarker(new MarkerOptions().position(latLng)
+                .anchor(0.5f, 0.9f)
+                // .anchorMarker(0.5f, 0.9f)
+                .title("Origin")
+                .snippet(latLng.toString()));
+    }
+
+    private void addDestinationMarker(LatLng latLng) {
+        if (null != mMarkerDestination) {
+            mMarkerDestination.remove();
+        }
+        mMarkerDestination = hMap.addMarker(
+                new MarkerOptions().position(latLng).anchor(0.5f, 0.9f).title("Destination").snippet(latLng.toString()));
+    }
+
+
     @Override
     protected void onStart() {
         super.onStart();
@@ -362,5 +556,27 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     public void onLowMemory() {
         super.onLowMemory();
         mMapView.onLowMemory();
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.mainmenu,menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+        int id=item.getItemId();
+        switch (id){
+            case R.id.map:
+                startActivity(new Intent(MainActivity.this,MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));
+                break;
+            case R.id.blog:
+                startActivity(new Intent(MainActivity.this,WebList.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP));
+                break;
+            case R.id.reminders:
+
+        }
+        return true;
     }
 }
