@@ -47,6 +47,9 @@ public class WebList extends AppCompatActivity {
             case R.id.blog:
                 startActivity(new Intent(WebList.this,WebList.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP));
                 break;
+            case R.id.reminders:
+                startActivity(new Intent(WebList.this,Reminders.class).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));
+                break;
         }
         return true;
     }

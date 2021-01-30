@@ -31,6 +31,7 @@
             </intent-filter>
         </activity>
         <activity android:name=".WebList"></activity>
+        <activity android:name=".Reminders"></activity>
     </application>
 <!-- android:allowBackup="true"-->
 </manifest>

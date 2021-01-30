@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/pills"
+        android:icon="@drawable/ic_baseline_medical_services_24"
+        android:title="@string/pills" />
+    <item
+        android:id="@+id/bookings"
+        android:icon="@drawable/ic_baseline_access_time_24"
+        android:title="@string/bookings" />
+</menu>

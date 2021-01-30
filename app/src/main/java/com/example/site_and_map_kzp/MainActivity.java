@@ -522,6 +522,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             }
             JSONObject route = routes.getJSONObject(0);
 
+
             // get route bounds
             JSONObject bounds = route.optJSONObject("bounds");
             if (null != bounds && bounds.has("southwest") && bounds.has("northeast")) {
@@ -665,6 +666,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 startActivity(new Intent(MainActivity.this,WebList.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP));
                 break;
             case R.id.reminders:
+                startActivity(new Intent(MainActivity.this,Reminders.class).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));
+                break;
 
         }
         return true;

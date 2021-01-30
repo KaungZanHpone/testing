@@ -19,8 +19,8 @@
     <string name="reminders">Reminders</string>
     <string name="blog">Blog</string>
     <string name="todo">Todo Lists</string>
-    <string name="bookings">Bookings,Meetings,Reservations</string>
-    <string name="pills">Times to take your pills</string>
+    <string name="bookings">reservations</string>
+    <string name="pills">pills</string>
 
     <string name="hello_first_fragment">Hello first fragment</string>
     <string name="hello_second_fragment">Hello second fragment. Arg: %1$s</string>
